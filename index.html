@@ -6,6 +6,9 @@
 <title>今日の日時</title>
 
 <style>
+/*************************************************
+ * 🎨 色（そのまま）
+ *************************************************/
 :root{
   --bg:#000000;
 
@@ -25,12 +28,25 @@
   --btn-icon:#FFF1E6;
   --btn-icon-disabled:#D9B9A2;
 
-  /* 強調（拡大のみ） */
-  --dim-scale: 0.92;     /* 強調していないとき少し小さく */
-  --focus-scale: 1.18;   /* 強調しているとき大きく */
+  /*************************************************
+   * 📐 自動リサイズ（ここが肝）
+   * vmin = 画面の短い辺に連動
+   *************************************************/
+  --year-font: clamp(36px, 7.5vmin, 96px);
+  --main-font: clamp(56px, 12.5vmin, 160px);  /* 日付・時刻の基準 */
+  --btn-size:  clamp(78px, 10vmin, 140px);
+  --btn-icon-size: clamp(42px, 6vmin, 78px);
+
+  /*************************************************
+   * 🔎 強調（拡大のみ）
+   *************************************************/
+  --dim-scale: 0.92;
+  --focus-scale: 1.18;
 }
 
-/* layout */
+/*************************************************
+ * 🧱 レイアウト共通
+ *************************************************/
 html,body{
   height:100%;
   margin:0;
@@ -38,6 +54,7 @@ html,body{
   font-family:-apple-system,"BIZ UDPGothic","Meiryo",sans-serif;
   overflow:hidden;
 }
+
 .wrap{
   height:100%;
   display:flex;
@@ -45,68 +62,95 @@ html,body{
   justify-content:center;
   align-items:center;
   text-align:center;
-  gap:5vh;
-  padding:24px;
+
+  /* 余白は少しだけ確保（はみ出し防止） */
+  padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+           max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  gap: 3.5vmin;
   box-sizing:border-box;
 }
 
-/* text */
+/*************************************************
+ * 🔠 文字
+ *************************************************/
 .yearline{
   color:var(--year);
   font-weight:900;
-  font-size:clamp(64px,8vw,130px);
+  font-size: var(--year-font);
   white-space:nowrap;
+  max-width: 96vw;
 }
+
 .dateline{
   font-weight:950;
-  font-size:clamp(126.5px,14.95vw,230px); /* 1.15倍 */
+  font-size: var(--main-font);
   white-space:nowrap;
+  max-width: 96vw;
 }
+
+/* 月・日（単位）だけ小さく */
 .unit{ font-size:0.6em; margin:0; }
 
-.timeRow{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:3vw;
-  white-space:nowrap;
-}
 .timeline{
   color:var(--time);
   font-weight:950;
-  font-size:clamp(126.5px,14.95vw,230px);
+  font-size: var(--main-font);
   white-space:nowrap;
+  max-width: 96vw;
 }
 
-/* weekday colors */
+/* 曜日色 */
 .wk{color:var(--wk);}
 .sat{color:var(--sat);}
 .sun{color:var(--sun);}
 
-/* button */
+/*************************************************
+ * ⏱ 時刻行（横向きは横並び、縦向きは縦並びに切替）
+ *************************************************/
+.timeRow{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap: 3vmin;
+  max-width: 96vw;
+}
+
+/* ✅ 縦向きは “縦並び” にしてはみ出し回避 */
+@media (orientation: portrait){
+  .timeRow{
+    flex-direction:column;
+    gap: 2vmin;
+  }
+}
+
+/*************************************************
+ * 🔊 ボタン
+ *************************************************/
 .speakBtn{
-  width:clamp(126px,12.6vw,198px);
-  height:clamp(126px,12.6vw,198px);
+  width: var(--btn-size);
+  height: var(--btn-size);
   border-radius:9999px;
 
-  border:6px solid var(--btn-ring);
-  background:var(--btn-bg);
-  color:var(--btn-icon);
+  border: 5px solid var(--btn-ring);
+  background: var(--btn-bg);
+  color: var(--btn-icon);
 
   display:flex;
   align-items:center;
   justify-content:center;
 
-  font-size:clamp(63px,6.3vw,108px);
+  font-size: var(--btn-icon-size);
   font-weight:900;
 
   box-shadow:0 10px 18px rgba(0,0,0,0.45);
   cursor:pointer;
 }
+
 .speakBtn:active{
   background:var(--btn-bg-press);
-  transform:translateY(4px);
+  transform:translateY(3px);
 }
+
 .speakBtn[disabled]{
   background:var(--btn-disabled);
   color:var(--btn-icon-disabled);
@@ -115,7 +159,9 @@ html,body{
   cursor:default;
 }
 
-/* emphasis: scale only */
+/*************************************************
+ * ✅ 強調（発光なし／拡大のみ）
+ *************************************************/
 .emph{
   transition: transform 0.22s ease;
   transform: scale(var(--dim-scale));
@@ -151,13 +197,14 @@ const AUTO_HOURS = [7, 12, 18];
 let speaking = false;
 let lastAutoKey = "";
 
-let userActivatedAudio = false;   // iOS対策：一度でも手動タップしたか
-let audioCtx = null;             // WebAudioは使い回す（安定）
+/* iOS安定化：一度でも手動タップしたら自動を許可 */
+let userActivatedAudio = false;
+let audioCtx = null;
 
 const pad = n => String(n).padStart(2,"0");
 function dayClass(d){ return d===0 ? "sun" : d===6 ? "sat" : "wk"; }
 
-/* ===== 表示更新（空白が出ない1行版） ===== */
+/* ===== 表示更新（空白が出ない1行） ===== */
 function render(){
   const now = new Date();
   const y = now.getFullYear();
@@ -172,46 +219,38 @@ function render(){
   checkAutoSpeak(now);
 }
 
-/* ===== iOS安定化：AudioContextをユーザー操作で初期化 ===== */
+/* ===== AudioContext（手動タップで起動） ===== */
 function ensureAudioContext(){
-  if(!audioCtx){
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  if(audioCtx.state === "suspended"){
-    // iOSではユーザー操作中に resume する必要がある
-    return audioCtx.resume().catch(()=>{});
-  }
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if(audioCtx.state === "suspended") return audioCtx.resume().catch(()=>{});
   return Promise.resolve();
 }
 
-/* ===== 効果音（ちゃらーん）※毎回、直前に鳴らす ===== */
+/* ===== 効果音（各パート直前に鳴らす） ===== */
 function playChime(){
-  // AudioContextが用意できない状況（未タップ等）なら無音で抜ける
   if(!audioCtx) return Promise.resolve();
 
   const t = audioCtx.currentTime;
   const g = audioCtx.createGain();
   g.connect(audioCtx.destination);
 
-  // 少し聞こえやすい音量
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.30, t + 0.02);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(0.30,t+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.45);
 
   const o = audioCtx.createOscillator();
-  o.type = "triangle";
-  o.frequency.setValueAtTime(1200, t);
-  o.frequency.exponentialRampToValueAtTime(600, t + 0.4);
+  o.type="triangle";
+  o.frequency.setValueAtTime(1200,t);
+  o.frequency.exponentialRampToValueAtTime(600,t+0.4);
   o.connect(g);
 
   o.start(t);
-  o.stop(t + 0.45);
+  o.stop(t+0.45);
 
-  // 音が鳴り終わるまで待つ
   return new Promise(res => setTimeout(res, 470));
 }
 
-/* ===== 強調切り替え（拡大のみ） ===== */
+/* ===== 強調 ===== */
 function clearFocus(){
   yearEl.classList.remove("focus");
   dateEl.classList.remove("focus");
@@ -221,7 +260,7 @@ function focusDate(){ clearFocus(); dateEl.classList.add("focus"); }
 function focusTime(){ clearFocus(); timeEl.classList.add("focus"); }
 function focusYear(){ clearFocus(); yearEl.classList.add("focus"); }
 
-/* ===== 読み上げ文（3分割） ===== */
+/* ===== 読み上げ文 ===== */
 function timeGreeting(h){
   if(h===7)  return "朝です。";
   if(h===12) return "お昼です。";
@@ -246,21 +285,21 @@ function buildParts(now){
 
 function makeUtterance(text){
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = "ja-JP";
-  u.rate = 0.9;
-  u.pitch = 1.2; // 女性寄り（端末依存）
+  u.lang="ja-JP";
+  u.rate=0.9;
+  u.pitch=1.2;
   return u;
 }
 
 function speakUtterance(u){
-  return new Promise((resolve) => {
+  return new Promise(resolve=>{
     u.onend = resolve;
-    u.onerror = resolve; // 失敗しても固まらない
+    u.onerror = resolve;
     speechSynthesis.speak(u);
   });
 }
 
-/* ===== 3段階（効果音→読み上げ）を順番に実行 ===== */
+/* ===== 3段階：各パート直前に効果音 → 読み上げ ===== */
 async function speakSequence(now){
   if(speaking) return;
   speaking = true;
@@ -269,20 +308,19 @@ async function speakSequence(now){
   const greet = timeGreeting(now.getHours());
   const { part1, part2, part3 } = buildParts(now);
 
-  // iOS対策：音声エンジンの初期化で引っかかりやすいので一旦cancel
   speechSynthesis.cancel();
 
-  // ① 今日は…（日付強調）
+  // ① 日付
   focusDate();
   await playChime();
   await speakUtterance(makeUtterance(greet + part1));
 
-  // ② 時刻は…（時刻強調）
+  // ② 時刻
   focusTime();
   await playChime();
   await speakUtterance(makeUtterance(part2));
 
-  // ③ 令和…（年強調）
+  // ③ 年
   focusYear();
   await playChime();
   await speakUtterance(makeUtterance(part3));
@@ -292,15 +330,14 @@ async function speakSequence(now){
   speakBtn.disabled = false;
 }
 
-/* 手動（最初のユーザー操作で AudioContext を確実に起動） */
+/* 手動 */
 async function manualSpeak(){
   userActivatedAudio = true;
   await ensureAudioContext();
   await speakSequence(new Date());
 }
 
-/* 自動（7/12/18時ちょうど）
-   iOS対策：一度でも手動タップがないと自動はスキップ（安定重視） */
+/* 自動（手動1回後にのみ動作） */
 function checkAutoSpeak(now){
   if(now.getMinutes() !== 0) return;
   if(!AUTO_HOURS.includes(now.getHours())) return;
@@ -309,14 +346,13 @@ function checkAutoSpeak(now){
   if(key === lastAutoKey) return;
   lastAutoKey = key;
 
-  if(!userActivatedAudio) return; // ✅ ここが安定化の要
-  // ページが表示中でないときは実行しない（不具合防止）
+  if(!userActivatedAudio) return;
   if(document.visibilityState !== "visible") return;
 
   speakSequence(now);
 }
 
-/* 初期表示 & 分更新（分が変わるタイミングに合わせて更新） */
+/* 初期化 & 分更新 */
 render();
 (function tick(){
   const n = new Date();
