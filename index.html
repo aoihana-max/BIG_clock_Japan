@@ -25,18 +25,18 @@
       --btn-icon:#FFF1E6;
       --btn-icon-disabled:#D9B9A2;
 
-      /* 強調：拡大のみ */
+      /* 強調：発光なし・拡大のみ */
       --dim-scale: 0.92;
       --focus-scale: 1.18;
-
-      /* (月)を少し離す */
-      --dow-gap: 0.18em;
 
       /* JSで更新（縦横自動フィット） */
       --year-font: clamp(34px, 7.2vmin, 96px);
       --main-font: clamp(52px, 12.5vmin, 160px);
       --btn-size: clamp(76px, 10vmin, 138px);
       --btn-icon-size: clamp(40px, 6vmin, 76px);
+
+      /* (月) を少し離す */
+      --dow-gap: 0.18em;
     }
 
     html,body{
@@ -88,13 +88,17 @@
     }
 
     @media (orientation: portrait){
-      .timeRow{ flex-direction:column; gap: 2.2vmin; }
+      .timeRow{
+        flex-direction:column;
+        gap: 2.2vmin;
+      }
     }
 
+    /* ✅ 時刻は日付と同じ文字サイズ（--main-font） */
     .timeline{
       color:var(--time);
       font-weight:950;
-      font-size: var(--main-font); /* 時刻＝日付と同サイズ */
+      font-size: var(--main-font);
       white-space:nowrap;
       max-width: 96vw;
     }
@@ -119,11 +123,17 @@
       font-weight:900;
 
       box-shadow:0 10px 18px rgba(0,0,0,0.45);
+
       touch-action: manipulation;
       -webkit-tap-highlight-color: rgba(0,0,0,0);
       cursor:pointer;
     }
-    .speakBtn:active{ background: var(--btn-bg-press); transform: translateY(3px); }
+
+    .speakBtn:active{
+      background: var(--btn-bg-press);
+      transform: translateY(3px);
+    }
+
     .speakBtn[disabled]{
       background: var(--btn-disabled);
       color: var(--btn-icon-disabled);
@@ -133,8 +143,13 @@
     }
 
     /* 強調（拡大のみ） */
-    .emph{ transition: transform 0.22s ease; transform: scale(var(--dim-scale)); }
-    .emph.focus{ transform: scale(var(--focus-scale)); }
+    .emph{
+      transition: transform 0.22s ease;
+      transform: scale(var(--dim-scale));
+    }
+    .emph.focus{
+      transform: scale(var(--focus-scale));
+    }
   </style>
 </head>
 
@@ -164,20 +179,17 @@
   let userActivatedAudio = false;
   let audioCtx = null;
 
-  // ✅ 初回だけ「ハロー！」を鳴らす
-  let helloDone = false;
-
-  let preferredVoice = null;
-
   const pad = n => String(n).padStart(2,"0");
   function dayClass(d){ return d===0 ? "sun" : d===6 ? "sat" : "wk"; }
 
+  /* ✅ 横向きは全体を1.2倍（ここが要望の核） */
   function updateLayoutVars(){
     const w = window.innerWidth;
     const h = window.innerHeight;
     const vmin = Math.min(w, h);
+
     const isLandscape = w > h;
-    const mult = isLandscape ? 1.2 : 1.0; // 横向きは全体1.2倍
+    const mult = isLandscape ? 1.2 : 1.0;
 
     const yearMin = Math.max(28, Math.floor(vmin * 0.085 * mult));
     const yearPref = (vmin * 0.11 * mult).toFixed(2) + "px";
@@ -201,6 +213,7 @@
     root.setProperty("--btn-size", `clamp(${btnMin}px, ${btnPref}px, ${btnMax}px)`);
     root.setProperty("--btn-icon-size", `clamp(${iconMin}px, ${iconPref}px, ${iconMax}px)`);
   }
+
   window.addEventListener("resize", updateLayoutVars);
   window.addEventListener("orientationchange", updateLayoutVars);
 
@@ -282,58 +295,58 @@
     };
   }
 
-  function refreshVoices(){
-    if(!("speechSynthesis" in window)) return;
-    const voices = speechSynthesis.getVoices() || [];
-    const ja = voices.filter(v => (v.lang || "").toLowerCase().startsWith("ja"));
-    preferredVoice = ja[0] || null;
-  }
-  if("speechSynthesis" in window){
-    speechSynthesis.onvoiceschanged = refreshVoices;
-  }
-
   function makeUtterance(text){
     const u = new SpeechSynthesisUtterance(text);
     u.lang="ja-JP";
     u.rate=0.9;
     u.pitch=1.2;
     u.volume=1;
-    if(preferredVoice) u.voice = preferredVoice;
     return u;
   }
 
-  // iOS保険：止まらないようタイムアウト
-  function speakUtteranceSafe(u, fallbackMs = 6500){
+  /* ✅ iOS向け：発話開始できない時に1回だけ再試行＋タイムアウト保険 */
+  function speakUtteranceSafe(u, fallbackMs = 5200){
     return new Promise(resolve=>{
       let finished = false;
+      let triedRetry = false;
+
       const finish = () => {
         if(finished) return;
         finished = true;
         resolve();
       };
+
+      const trySpeak = () => {
+        // iOSで「paused」になることがある
+        try { speechSynthesis.resume(); } catch(e) {}
+        speechSynthesis.speak(u);
+
+        // 開始しない時の保険：一定時間で再試行1回
+        setTimeout(() => {
+          if(finished) return;
+          // speakingがfalseでも、実際に鳴ってないケースがあるので再試行
+          if(!triedRetry){
+            triedRetry = true;
+            try { speechSynthesis.cancel(); } catch(e) {}
+            setTimeout(() => {
+              trySpeak();
+            }, 120);
+          }
+        }, 900);
+      };
+
       u.onend = finish;
       u.onerror = finish;
+
+      // 最終タイムアウト（止まらないための保険）
       setTimeout(finish, fallbackMs);
 
-      try { speechSynthesis.resume(); } catch(e) {}
-      try { speechSynthesis.speak(u); } catch(e) { finish(); }
+      // いったんcancelしてから少し待って speak（iOS安定化）
+      try { speechSynthesis.cancel(); } catch(e) {}
+      setTimeout(() => {
+        trySpeak();
+      }, 200);
     });
-  }
-
-  // ✅ 初回だけ「ハロー！」を鳴らしてTTSを確実に起こす
-  async function warmUpHello(){
-    if(helloDone) return;
-    if(!("speechSynthesis" in window)) return;
-
-    refreshVoices();
-
-    try { speechSynthesis.cancel(); } catch(e) {}
-    try { speechSynthesis.resume(); } catch(e) {}
-
-    const hello = makeUtterance("ハロー！");
-    await speakUtteranceSafe(hello, 2500);
-
-    helloDone = true;
   }
 
   async function speakSequence(now){
@@ -342,30 +355,20 @@
     speakBtn.disabled = true;
 
     try{
-      if(!("speechSynthesis" in window)) return;
-
-      refreshVoices();
-
-      // ✅ 初回だけ「ハロー！」
-      await warmUpHello();
-
-      try { speechSynthesis.cancel(); } catch(e) {}
-      try { speechSynthesis.resume(); } catch(e) {}
-
       const greet = timeGreeting(now.getHours());
       const { part1, part2, part3 } = buildParts(now);
 
       focusDate();
       await playChime();
-      await speakUtteranceSafe(makeUtterance(greet + part1), 7500);
+      await speakUtteranceSafe(makeUtterance(greet + part1), 6500);
 
       focusTime();
       await playChime();
-      await speakUtteranceSafe(makeUtterance(part2), 6500);
+      await speakUtteranceSafe(makeUtterance(part2), 5200);
 
       focusYear();
       await playChime();
-      await speakUtteranceSafe(makeUtterance(part3), 6500);
+      await speakUtteranceSafe(makeUtterance(part3), 5200);
 
     } finally {
       clearFocus();
@@ -398,7 +401,6 @@
 
   updateLayoutVars();
   render();
-  refreshVoices();
 
   (function tick(){
     const n = new Date();
