@@ -35,6 +35,7 @@
       --btn-size: clamp(76px, 10vmin, 138px);
       --btn-icon-size: clamp(40px, 6vmin, 76px);
 
+      /* (月) を少し離す */
       --dow-gap: 0.18em;
     }
 
@@ -92,7 +93,7 @@
     .timeline{
       color:var(--time);
       font-weight:950;
-      font-size: var(--main-font);
+      font-size: var(--main-font); /* 時刻＝日付と同サイズ */
       white-space:nowrap;
       max-width: 96vw;
     }
@@ -131,36 +132,9 @@
       cursor:default;
     }
 
+    /* 強調（拡大のみ） */
     .emph{ transition: transform 0.22s ease; transform: scale(var(--dim-scale)); }
     .emph.focus{ transform: scale(var(--focus-scale)); }
-
-    /* 診断表示（小さく） */
-    .diag{
-      position: fixed;
-      left: 10px;
-      right: 10px;
-      bottom: 10px;
-      background: rgba(0,0,0,0.55);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 12px;
-      padding: 10px 12px;
-      color: #fff;
-      font-size: 12px;
-      line-height: 1.35;
-      max-height: 22vh;
-      overflow: auto;
-      user-select: text;
-    }
-    .diag strong{ font-weight: 800; }
-    .diag .row{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
-    .diag button{
-      font-size: 12px;
-      padding: 6px 10px;
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.2);
-      background: rgba(255,255,255,0.08);
-      color:#fff;
-    }
   </style>
 </head>
 
@@ -175,21 +149,11 @@
     </div>
   </div>
 
-  <div class="diag" id="diag">
-    <div class="row">
-      <strong>診断</strong>
-      <button onclick="testSpeech()">音声テスト</button>
-      <button onclick="refreshVoices()">音声一覧更新</button>
-    </div>
-    <div id="diagText">起動しました。</div>
-  </div>
-
 <script>
   const yearEl = document.getElementById("yearline");
   const dateEl = document.getElementById("dateline");
   const timeEl = document.getElementById("timeline");
   const speakBtn = document.getElementById("speakBtn");
-  const diagText = document.getElementById("diagText");
 
   const wd = ["日","月","火","水","木","金","土"];
   const AUTO_HOURS = [7, 12, 18];
@@ -200,25 +164,18 @@
   let userActivatedAudio = false;
   let audioCtx = null;
 
-  // Speech voices
-  let cachedVoices = [];
-  let preferredVoice = null;
+  // ✅ 無音ウォームアップは最初の1回だけ
+  let ttsWarmedUp = false;
 
   const pad = n => String(n).padStart(2,"0");
   function dayClass(d){ return d===0 ? "sun" : d===6 ? "sat" : "wk"; }
-
-  function log(msg){
-    const t = new Date();
-    const stamp = `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
-    diagText.innerHTML = `${stamp} ${msg}<br>` + diagText.innerHTML;
-  }
 
   function updateLayoutVars(){
     const w = window.innerWidth;
     const h = window.innerHeight;
     const vmin = Math.min(w, h);
     const isLandscape = w > h;
-    const mult = isLandscape ? 1.2 : 1.0; // ← 横向きは全体1.2倍
+    const mult = isLandscape ? 1.2 : 1.0; // 横向きは全体1.2倍
 
     const yearMin = Math.max(28, Math.floor(vmin * 0.085 * mult));
     const yearPref = (vmin * 0.11 * mult).toFixed(2) + "px";
@@ -263,11 +220,9 @@
   function ensureAudioContext(){
     if(!audioCtx){
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      log("AudioContext 作成");
     }
     if(audioCtx.state === "suspended"){
-      log("AudioContext resume 試行");
-      return audioCtx.resume().catch(()=>{ log("AudioContext resume 失敗"); });
+      return audioCtx.resume().catch(()=>{});
     }
     return Promise.resolve();
   }
@@ -325,67 +280,60 @@
     };
   }
 
+  let preferredVoice = null;
   function refreshVoices(){
-    if(!("speechSynthesis" in window)){
-      log("speechSynthesis なし（この環境では音声不可）");
-      return;
-    }
-    cachedVoices = speechSynthesis.getVoices() || [];
-    const ja = cachedVoices.filter(v => (v.lang || "").toLowerCase().startsWith("ja"));
+    if(!("speechSynthesis" in window)) return;
+    const voices = speechSynthesis.getVoices() || [];
+    const ja = voices.filter(v => (v.lang || "").toLowerCase().startsWith("ja"));
     preferredVoice = ja[0] || null;
-    log(`音声一覧: total=${cachedVoices.length}, ja=${ja.length}${preferredVoice ? " / ja[0]="+preferredVoice.name : ""}`);
   }
-
-  // voices が遅れて入るiOS対策
   if("speechSynthesis" in window){
-    speechSynthesis.onvoiceschanged = () => {
-      refreshVoices();
-    };
+    speechSynthesis.onvoiceschanged = refreshVoices;
   }
 
-  function makeUtterance(text){
+  function makeUtterance(text, volume=1){
     const u = new SpeechSynthesisUtterance(text);
     u.lang="ja-JP";
     u.rate=0.9;
     u.pitch=1.2;
-    u.volume=1;
-    // iOSでvoice未指定だと無音になることがあるので、取れたら指定
+    u.volume=volume;
     if(preferredVoice) u.voice = preferredVoice;
     return u;
   }
 
-  // ✅ iOS最重要：発話開始できない/イベントが返らない時に必ず次へ進む
+  // iOS保険：止まらないようタイムアウト
   function speakUtteranceSafe(u, fallbackMs = 6500){
     return new Promise(resolve=>{
       let finished = false;
-      const finish = (why) => {
+      const finish = () => {
         if(finished) return;
         finished = true;
-        if(why) log(why);
         resolve();
       };
+      u.onend = finish;
+      u.onerror = finish;
+      setTimeout(finish, fallbackMs);
 
-      u.onstart = () => log("TTS start");
-      u.onend = () => finish("TTS end");
-      u.onerror = () => finish("TTS error");
-
-      // 最終タイムアウト
-      const timer = setTimeout(() => finish("TTS timeout（無音/無反応の可能性）"), fallbackMs);
-
-      // 発話開始をできるだけ確実に
-      try { speechSynthesis.cancel(); } catch(e) {}
       try { speechSynthesis.resume(); } catch(e) {}
-
-      // iOSで「すぐ speak」すると失敗しやすいので少し待つ
-      setTimeout(() => {
-        try { speechSynthesis.resume(); } catch(e) {}
-        try { speechSynthesis.speak(u); } catch(e) { finish("TTS speak throw"); }
-      }, 180);
-
-      // finishしたらタイマー解除
-      const origResolve = resolve;
-      resolve = () => { clearTimeout(timer); origResolve(); };
+      try { speechSynthesis.speak(u); } catch(e) { finish(); }
     });
+  }
+
+  // ✅ 初回だけ無音ウォームアップ（volume=0）
+  async function warmUpTTS(){
+    if(ttsWarmedUp) return;
+    if(!("speechSynthesis" in window)) return;
+
+    refreshVoices();
+
+    // cancel → 少し待ってから無音発話（iOS安定）
+    try { speechSynthesis.cancel(); } catch(e) {}
+
+    // 無音でも発話エンジンを起こすため、短い文を volume=0 で
+    const warm = makeUtterance("テストです。", 0);
+    await speakUtteranceSafe(warm, 2000);
+
+    ttsWarmedUp = true;
   }
 
   async function speakSequence(now){
@@ -394,20 +342,31 @@
     speakBtn.disabled = true;
 
     try{
-      if(!("speechSynthesis" in window)){
-        log("speechSynthesis が使えません");
-        return;
-      }
+      if(!("speechSynthesis" in window)) return;
 
-      // voices更新（遅延ロード対策）
       refreshVoices();
+
+      // ✅ 初回だけ無音ウォームアップ（ここが効く）
+      await warmUpTTS();
+
+      // 念のためリセット
+      try { speechSynthesis.cancel(); } catch(e) {}
+      try { speechSynthesis.resume(); } catch(e) {}
 
       const greet = timeGreeting(now.getHours());
       const { part1, part2, part3 } = buildParts(now);
 
-      focusDate(); await playChime(); await speakUtteranceSafe(makeUtterance(greet + part1), 7500);
-      focusTime(); await playChime(); await speakUtteranceSafe(makeUtterance(part2), 6500);
-      focusYear(); await playChime(); await speakUtteranceSafe(makeUtterance(part3), 6500);
+      focusDate();
+      await playChime();
+      await speakUtteranceSafe(makeUtterance(greet + part1, 1), 7500);
+
+      focusTime();
+      await playChime();
+      await speakUtteranceSafe(makeUtterance(part2, 1), 6500);
+
+      focusYear();
+      await playChime();
+      await speakUtteranceSafe(makeUtterance(part3, 1), 6500);
 
     } finally {
       clearFocus();
@@ -421,9 +380,6 @@
     userActivatedAudio = true;
 
     await ensureAudioContext();
-
-    refreshVoices();
-    log("手動読み上げ開始");
     await speakSequence(new Date());
   }
 
@@ -439,20 +395,6 @@
     if(document.visibilityState !== "visible") return;
 
     speakSequence(now);
-  }
-
-  async function testSpeech(){
-    userActivatedAudio = true;
-    await ensureAudioContext();
-
-    refreshVoices();
-    log("音声テスト：開始（『テストです』）");
-    try{
-      // 効果音なしで単発テスト
-      await speakUtteranceSafe(makeUtterance("テストです。"), 4500);
-    } finally {
-      log("音声テスト：終了");
-    }
   }
 
   updateLayoutVars();
