@@ -1,44 +1,222 @@
-async function runGate(){
-  // 連打防止
-  if(speaking) return;
-  speaking = true;
-  gateBtn.disabled = true;
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>BIGカレンダ</title>
 
-  // ✅ 画面切替は必ず行うための保険
-  const forceGoMain = () => {
-    ttsReady = true;
-    gate.style.display = "none";
-    app.style.visibility = "visible";
-    render();
-  };
+  <style>
+    :root{
+      --bg:#000000;
+      --year:#FFFFFF;
+      --wk:#FFFF00;
+      --sat:#5FB3E6;
+      --sun:#FF4A4A;
+      --time:#00ff00;
 
-  try{
-    await ensureAudioContext();
-    refreshVoices();
+      --btn-bg:#ff8c00;
+      --btn-bg-press:#C96A2C;
+      --btn-ring:#C96A2C;
+      --btn-disabled:#5A3A28;
+      --btn-icon:#FFF1E6;
+      --btn-icon-disabled:#D9B9A2;
 
-    // ✅ iOS対策：ユーザー操作の“直後”に speak を即実行（awaitを挟まない）
-    //   → 診断の「音声テスト」と同じ成功条件に寄せる
-    try { speechSynthesis.cancel(); } catch(e) {}
-    try { speechSynthesis.resume(); } catch(e) {}
+      --dim-scale: 0.92;
+      --focus-scale: 1.18;
+      --dow-gap: 0.18em;
 
-    const u = makeUtterance("テストです。");  // ←確実に通った文言
-    u.onend = () => {
-      // 読めたら本番へ
-      forceGoMain();
-    };
-    u.onerror = () => {
-      // エラーでも本番へ（止まらない）
-      forceGoMain();
-    };
+      --year-font: clamp(34px, 7.2vmin, 96px);
+      --main-font: clamp(52px, 12.5vmin, 160px);
+      --btn-size: clamp(76px, 10vmin, 138px);
+      --btn-icon-size: clamp(40px, 6vmin, 76px);
 
-    // ★ここが最重要：ユーザー操作の文脈内で即 speak
-    speechSynthesis.speak(u);
+      --unit-scale: 0.8;
+      --paren-scale: 0.8;
+    }
 
-    // ✅ もし iOS が onend/onerror を返さない場合の保険（2.5秒後に必ず切替）
-    setTimeout(forceGoMain, 2500);
+    html,body{
+      height:100%;
+      margin:0;
+      background:var(--bg);
+      font-family:-apple-system,"BIZ UDPGothic","Meiryo",sans-serif;
+      overflow:hidden;
+    }
 
-  } finally {
-    speaking = false;
-    gateBtn.disabled = false;
+    .wrap{
+      height:100%;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      text-align:center;
+      padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+               max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+      gap: 3.6vmin;
+      box-sizing:border-box;
+    }
+
+    .gate{
+      position:fixed;
+      inset:0;
+      background:var(--bg);
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      gap: 4vmin;
+      padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+               max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+      box-sizing:border-box;
+      z-index: 9999;
+    }
+    .gateTitle{
+      color: var(--year);
+      font-weight: 900;
+      font-size: clamp(30px, 5.2vmin, 54px);
+      opacity: 0.95;
+    }
+    .gateBtn{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap: 0.4em;
+      padding: 18px 26px;
+      border-radius: 22px;
+      border: 3px solid rgba(255,255,255,0.18);
+      background: rgba(255,140,0,0.92);
+      color:#fff;
+      font-weight: 900;
+      font-size: clamp(26px, 6vmin, 52px);
+      box-shadow: 0 12px 22px rgba(0,0,0,0.55);
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: rgba(0,0,0,0);
+      cursor:pointer;
+    }
+    .gateBtn:active{ transform: translateY(3px); background: rgba(201,106,44,0.95); }
+
+    .yearline{ color:var(--year); font-weight:900; font-size: var(--year-font); white-space:nowrap; max-width: 96vw; }
+    .dateline{ font-weight:950; font-size: var(--main-font); max-width: 96vw; white-space: normal; overflow-wrap: anywhere; }
+    .timeline{ color:var(--time); font-weight:950; font-size: var(--main-font); white-space:nowrap; max-width: 96vw; }
+
+    .wk{color:var(--wk);} .sat{color:var(--sat);} .sun{color:var(--sun);}
+
+    .emph{ transition: transform 0.22s ease; transform: scale(var(--dim-scale)); }
+    .emph.focus{ transform: scale(var(--focus-scale)); }
+
+    .unit{ display:inline-block; transform: scale(var(--unit-scale)); transform-origin: left center; }
+    .paren{ display:inline-block; transform: scale(var(--paren-scale)); transform-origin: center; }
+    .dowGap{ margin-left: var(--dow-gap); }
+  </style>
+</head>
+
+<body>
+  <div class="gate" id="gate">
+    <div class="gateTitle">✨ BIGカレンダ</div>
+    <button class="gateBtn" id="gateBtn" onclick="runGate()">✨ スイッチON</button>
+  </div>
+
+  <div class="wrap" id="app" style="visibility:hidden;">
+    <div class="yearline emph" id="yearline">----</div>
+    <div class="dateline emph" id="dateline">----</div>
+    <div class="timeline emph" id="timeline">--：--</div>
+  </div>
+
+<script>
+  const gate = document.getElementById("gate");
+  const gateBtn = document.getElementById("gateBtn");
+  const app = document.getElementById("app");
+
+  const yearEl = document.getElementById("yearline");
+  const dateEl = document.getElementById("dateline");
+  const timeEl = document.getElementById("timeline");
+
+  const wd = ["日","月","火","水","木","金","土"];
+  let speaking = false;
+  let ttsReady = false;
+  let audioCtx = null;
+  let preferredVoice = null;
+
+  const pad = n => String(n).padStart(2,"0");
+  function dayClass(d){ return d===0 ? "sun" : d===6 ? "sat" : "wk"; }
+
+  function ensureAudioContext(){
+    if(!audioCtx){
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if(audioCtx.state === "suspended"){
+      return audioCtx.resume().catch(()=>{});
+    }
+    return Promise.resolve();
   }
-}
+
+  function refreshVoices(){
+    if(!("speechSynthesis" in window)) return;
+    const voices = speechSynthesis.getVoices() || [];
+    preferredVoice = voices.find(v => v.lang && v.lang.startsWith("ja")) || null;
+  }
+  speechSynthesis.onvoiceschanged = refreshVoices;
+
+  function makeUtterance(text){
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang="ja-JP";
+    u.rate=0.9;
+    u.pitch=1.2;
+    if(preferredVoice) u.voice = preferredVoice;
+    return u;
+  }
+
+  function render(){
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth()+1;
+    const d = now.getDate();
+    const dow = now.getDay();
+
+    yearEl.textContent = `令和${y-2018}年 ${y}`;
+    dateEl.innerHTML =
+      `<span class="${dayClass(dow)}">
+        ${m}<span class="unit">月</span>${d}<span class="unit">日</span>
+        <span class="dowGap"><span class="paren">（</span>${wd[dow]}<span class="paren">）</span></span>
+       </span>`;
+    timeEl.textContent = `${pad(now.getHours())}：${pad(now.getMinutes())}`;
+  }
+
+  /* ★★★ ここがあなた指定の差し替え済み runGate ★★★ */
+  async function runGate(){
+    if(speaking) return;
+    speaking = true;
+    gateBtn.disabled = true;
+
+    const forceGoMain = () => {
+      ttsReady = true;
+      gate.style.display = "none";
+      app.style.visibility = "visible";
+      render();
+    };
+
+    try{
+      await ensureAudioContext();
+      refreshVoices();
+
+      try { speechSynthesis.cancel(); } catch(e) {}
+      try { speechSynthesis.resume(); } catch(e) {}
+
+      const u = makeUtterance("テストです。");
+      u.onend = forceGoMain;
+      u.onerror = forceGoMain;
+
+      speechSynthesis.speak(u);
+      setTimeout(forceGoMain, 2500);
+
+    } finally {
+      speaking = false;
+      gateBtn.disabled = false;
+    }
+  }
+
+  render();
+</script>
+</body>
+</html>
