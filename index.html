@@ -25,18 +25,18 @@
       --btn-icon:#FFF1E6;
       --btn-icon-disabled:#D9B9A2;
 
-      /* 強調：発光なし・拡大のみ */
+      /* 強調：拡大のみ */
       --dim-scale: 0.92;
       --focus-scale: 1.18;
+
+      /* (月)を少し離す */
+      --dow-gap: 0.18em;
 
       /* JSで更新（縦横自動フィット） */
       --year-font: clamp(34px, 7.2vmin, 96px);
       --main-font: clamp(52px, 12.5vmin, 160px);
       --btn-size: clamp(76px, 10vmin, 138px);
       --btn-icon-size: clamp(40px, 6vmin, 76px);
-
-      /* (月) を少し離す */
-      --dow-gap: 0.18em;
     }
 
     html,body{
@@ -86,6 +86,7 @@
       max-width: 96vw;
       white-space:nowrap;
     }
+
     @media (orientation: portrait){
       .timeRow{ flex-direction:column; gap: 2.2vmin; }
     }
@@ -118,7 +119,6 @@
       font-weight:900;
 
       box-shadow:0 10px 18px rgba(0,0,0,0.45);
-
       touch-action: manipulation;
       -webkit-tap-highlight-color: rgba(0,0,0,0);
       cursor:pointer;
@@ -164,8 +164,10 @@
   let userActivatedAudio = false;
   let audioCtx = null;
 
-  // ✅ 無音ウォームアップは最初の1回だけ
-  let ttsWarmedUp = false;
+  // ✅ 初回だけ「ハロー！」を鳴らす
+  let helloDone = false;
+
+  let preferredVoice = null;
 
   const pad = n => String(n).padStart(2,"0");
   function dayClass(d){ return d===0 ? "sun" : d===6 ? "sat" : "wk"; }
@@ -280,7 +282,6 @@
     };
   }
 
-  let preferredVoice = null;
   function refreshVoices(){
     if(!("speechSynthesis" in window)) return;
     const voices = speechSynthesis.getVoices() || [];
@@ -291,12 +292,12 @@
     speechSynthesis.onvoiceschanged = refreshVoices;
   }
 
-  function makeUtterance(text, volume=1){
+  function makeUtterance(text){
     const u = new SpeechSynthesisUtterance(text);
     u.lang="ja-JP";
     u.rate=0.9;
     u.pitch=1.2;
-    u.volume=volume;
+    u.volume=1;
     if(preferredVoice) u.voice = preferredVoice;
     return u;
   }
@@ -319,21 +320,20 @@
     });
   }
 
-  // ✅ 初回だけ無音ウォームアップ（volume=0）
-  async function warmUpTTS(){
-    if(ttsWarmedUp) return;
+  // ✅ 初回だけ「ハロー！」を鳴らしてTTSを確実に起こす
+  async function warmUpHello(){
+    if(helloDone) return;
     if(!("speechSynthesis" in window)) return;
 
     refreshVoices();
 
-    // cancel → 少し待ってから無音発話（iOS安定）
     try { speechSynthesis.cancel(); } catch(e) {}
+    try { speechSynthesis.resume(); } catch(e) {}
 
-    // 無音でも発話エンジンを起こすため、短い文を volume=0 で
-    const warm = makeUtterance("テストです。", 0);
-    await speakUtteranceSafe(warm, 2000);
+    const hello = makeUtterance("ハロー！");
+    await speakUtteranceSafe(hello, 2500);
 
-    ttsWarmedUp = true;
+    helloDone = true;
   }
 
   async function speakSequence(now){
@@ -346,10 +346,9 @@
 
       refreshVoices();
 
-      // ✅ 初回だけ無音ウォームアップ（ここが効く）
-      await warmUpTTS();
+      // ✅ 初回だけ「ハロー！」
+      await warmUpHello();
 
-      // 念のためリセット
       try { speechSynthesis.cancel(); } catch(e) {}
       try { speechSynthesis.resume(); } catch(e) {}
 
@@ -358,15 +357,15 @@
 
       focusDate();
       await playChime();
-      await speakUtteranceSafe(makeUtterance(greet + part1, 1), 7500);
+      await speakUtteranceSafe(makeUtterance(greet + part1), 7500);
 
       focusTime();
       await playChime();
-      await speakUtteranceSafe(makeUtterance(part2, 1), 6500);
+      await speakUtteranceSafe(makeUtterance(part2), 6500);
 
       focusYear();
       await playChime();
-      await speakUtteranceSafe(makeUtterance(part3, 1), 6500);
+      await speakUtteranceSafe(makeUtterance(part3), 6500);
 
     } finally {
       clearFocus();
