@@ -15,6 +15,7 @@
       --wk:#FFFF00;
       --sat:#5FB3E6;
       --sun:#FF4A4A;
+
       --time:#00ff00;
 
       --btn-bg:#ff8c00;
@@ -93,6 +94,7 @@
       }
     }
 
+    /* ✅ 時刻は日付と同じ文字サイズ（--main-font） */
     .timeline{
       color:var(--time);
       font-weight:950;
@@ -169,41 +171,41 @@
   const speakBtn = document.getElementById("speakBtn");
 
   const wd = ["日","月","火","水","木","金","土"];
-
-  /* 自動読み上げ：7 / 12 / 18 */
   const AUTO_HOURS = [7, 12, 18];
 
   let speaking = false;
   let lastAutoKey = "";
 
-  /* iOS安定化：初回タップ後に自動を許可 */
   let userActivatedAudio = false;
   let audioCtx = null;
 
   const pad = n => String(n).padStart(2,"0");
   function dayClass(d){ return d===0 ? "sun" : d===6 ? "sat" : "wk"; }
 
-  /* 端末・向きに合わせてフォントを自動調整 */
+  /* ✅ 横向きは全体を1.2倍（ここが要望の核） */
   function updateLayoutVars(){
     const w = window.innerWidth;
     const h = window.innerHeight;
     const vmin = Math.min(w, h);
 
-    const yearMin = Math.max(28, Math.floor(vmin * 0.085));
-    const yearPref = (vmin * 0.11).toFixed(2) + "px";
-    const yearMax = Math.max(72, Math.floor(vmin * 0.20));
+    const isLandscape = w > h;
+    const mult = isLandscape ? 1.2 : 1.0;
 
-    const mainMin = Math.max(40, Math.floor(vmin * 0.13));
-    const mainPref = (vmin * 0.19).toFixed(2) + "px";
-    const mainMax = Math.max(110, Math.floor(vmin * 0.34));
+    const yearMin = Math.max(28, Math.floor(vmin * 0.085 * mult));
+    const yearPref = (vmin * 0.11 * mult).toFixed(2) + "px";
+    const yearMax = Math.max(72, Math.floor(vmin * 0.20 * mult));
 
-    const btnMin = Math.max(60, Math.floor(vmin * 0.14));
-    const btnPref = Math.max(72, Math.floor(vmin * 0.16));
-    const btnMax = Math.max(110, Math.floor(vmin * 0.22));
+    const mainMin = Math.max(40, Math.floor(vmin * 0.13 * mult));
+    const mainPref = (vmin * 0.19 * mult).toFixed(2) + "px";
+    const mainMax = Math.max(110, Math.floor(vmin * 0.34 * mult));
 
-    const iconMin = Math.max(32, Math.floor(vmin * 0.085));
-    const iconPref = Math.max(40, Math.floor(vmin * 0.095));
-    const iconMax = Math.max(64, Math.floor(vmin * 0.13));
+    const btnMin = Math.max(60, Math.floor(vmin * 0.14 * mult));
+    const btnPref = Math.max(72, Math.floor(vmin * 0.16 * mult));
+    const btnMax = Math.max(110, Math.floor(vmin * 0.22 * mult));
+
+    const iconMin = Math.max(32, Math.floor(vmin * 0.085 * mult));
+    const iconPref = Math.max(40, Math.floor(vmin * 0.095 * mult));
+    const iconMax = Math.max(64, Math.floor(vmin * 0.13 * mult));
 
     const root = document.documentElement.style;
     root.setProperty("--year-font", `clamp(${yearMin}px, ${yearPref}, ${yearMax}px)`);
@@ -211,10 +213,10 @@
     root.setProperty("--btn-size", `clamp(${btnMin}px, ${btnPref}px, ${btnMax}px)`);
     root.setProperty("--btn-icon-size", `clamp(${iconMin}px, ${iconPref}px, ${iconMax}px)`);
   }
+
   window.addEventListener("resize", updateLayoutVars);
   window.addEventListener("orientationchange", updateLayoutVars);
 
-  /* 表示更新（空白が出ない1行 + (月)だけ少し離す） */
   function render(){
     const now = new Date();
     const y = now.getFullYear();
@@ -230,7 +232,6 @@
     checkAutoSpeak(now);
   }
 
-  /* AudioContext（手動タップで起動） */
   function ensureAudioContext(){
     if(!audioCtx){
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -241,7 +242,6 @@
     return Promise.resolve();
   }
 
-  /* 効果音（各パート直前） */
   function playChime(){
     if(!audioCtx) return Promise.resolve();
 
@@ -265,7 +265,6 @@
     return new Promise(res => setTimeout(res, 470));
   }
 
-  /* 強調（拡大のみ） */
   function clearFocus(){
     yearEl.classList.remove("focus");
     dateEl.classList.remove("focus");
@@ -275,7 +274,6 @@
   function focusTime(){ clearFocus(); timeEl.classList.add("focus"); }
   function focusYear(){ clearFocus(); yearEl.classList.add("focus"); }
 
-  /* 読み上げ文（3分割） */
   function timeGreeting(h){
     if(h===7)  return "朝です。";
     if(h===12) return "お昼です。";
@@ -302,51 +300,75 @@
     u.lang="ja-JP";
     u.rate=0.9;
     u.pitch=1.2;
+    u.volume=1;
     return u;
   }
 
-  /* ✅ iOS保険：onend/onerrorが来ないことがあるのでタイムアウトで必ずresolve */
-  function speakUtterance(u, fallbackMs = 4500){
+  /* ✅ iOS向け：発話開始できない時に1回だけ再試行＋タイムアウト保険 */
+  function speakUtteranceSafe(u, fallbackMs = 5200){
     return new Promise(resolve=>{
-      let done = false;
+      let finished = false;
+      let triedRetry = false;
+
       const finish = () => {
-        if(done) return;
-        done = true;
+        if(finished) return;
+        finished = true;
         resolve();
       };
+
+      const trySpeak = () => {
+        // iOSで「paused」になることがある
+        try { speechSynthesis.resume(); } catch(e) {}
+        speechSynthesis.speak(u);
+
+        // 開始しない時の保険：一定時間で再試行1回
+        setTimeout(() => {
+          if(finished) return;
+          // speakingがfalseでも、実際に鳴ってないケースがあるので再試行
+          if(!triedRetry){
+            triedRetry = true;
+            try { speechSynthesis.cancel(); } catch(e) {}
+            setTimeout(() => {
+              trySpeak();
+            }, 120);
+          }
+        }, 900);
+      };
+
       u.onend = finish;
       u.onerror = finish;
-      speechSynthesis.speak(u);
+
+      // 最終タイムアウト（止まらないための保険）
       setTimeout(finish, fallbackMs);
+
+      // いったんcancelしてから少し待って speak（iOS安定化）
+      try { speechSynthesis.cancel(); } catch(e) {}
+      setTimeout(() => {
+        trySpeak();
+      }, 200);
     });
   }
 
-  /* ✅ 完全同期：強調 → 効果音 → 読み上げ（パートごと） */
   async function speakSequence(now){
     if(speaking) return;
     speaking = true;
     speakBtn.disabled = true;
 
     try{
-      speechSynthesis.cancel();
-
       const greet = timeGreeting(now.getHours());
       const { part1, part2, part3 } = buildParts(now);
 
-      // ① 日付
       focusDate();
       await playChime();
-      await speakUtterance(makeUtterance(greet + part1), 5200);
+      await speakUtteranceSafe(makeUtterance(greet + part1), 6500);
 
-      // ② 時刻
       focusTime();
       await playChime();
-      await speakUtterance(makeUtterance(part2), 4200);
+      await speakUtteranceSafe(makeUtterance(part2), 5200);
 
-      // ③ 年
       focusYear();
       await playChime();
-      await speakUtterance(makeUtterance(part3), 4200);
+      await speakUtteranceSafe(makeUtterance(part3), 5200);
 
     } finally {
       clearFocus();
@@ -355,15 +377,14 @@
     }
   }
 
-  /* 手動 */
   async function manualSpeak(){
     if(speaking) return;
     userActivatedAudio = true;
+
     await ensureAudioContext();
     await speakSequence(new Date());
   }
 
-  /* 自動（7/12/18）※初回タップ後のみ／画面表示中のみ */
   function checkAutoSpeak(now){
     if(now.getMinutes() !== 0) return;
     if(!AUTO_HOURS.includes(now.getHours())) return;
@@ -378,11 +399,9 @@
     speakSequence(now);
   }
 
-  /* 初期化 */
   updateLayoutVars();
   render();
 
-  /* 分が変わる瞬間に更新 */
   (function tick(){
     const n = new Date();
     setTimeout(()=>{ render(); tick(); },
