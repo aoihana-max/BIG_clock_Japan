@@ -29,13 +29,8 @@
       --dim-scale: 0.92;
       --focus-scale: 1.18;
 
-      /* JSで更新（縦横自動フィット） */
-      --year-font: clamp(34px, 7.2vmin, 96px);
-      --main-font: clamp(52px, 12.5vmin, 160px);
-      --btn-size: clamp(76px, 10vmin, 138px);
-      --btn-icon-size: clamp(40px, 6vmin, 76px);
-
-      --dow-gap: 0.18em;
+      /* ✅ 日付と曜日の間の「見た目の空白」をなくす */
+      --dow-gap: 0em;
     }
 
     html,body{
@@ -59,6 +54,14 @@
       box-sizing:border-box;
     }
 
+    /* ✅ 文字サイズの指定（JSで自動調整） */
+    :root{
+      --year-font: clamp(34px, 7.2vmin, 96px);
+      --main-font: clamp(52px, 12.5vmin, 160px);
+      --btn-size: clamp(76px, 10vmin, 138px);
+      --btn-icon-size: clamp(40px, 6vmin, 76px);
+    }
+
     .yearline{
       color:var(--year);
       font-weight:900;
@@ -74,8 +77,15 @@
       max-width: 96vw;
     }
 
-    .unit{ font-size:0.6em; margin:0; }
-    .dow{ margin-left: var(--dow-gap); }
+    /* ✅ 月/日 と （ ）を同じサイズにする：0.6em */
+    .unit{
+      font-size:0.6em;
+      margin:0;
+    }
+
+    .dow{
+      margin-left: var(--dow-gap); /* 0em にして見た目の空白を消す */
+    }
 
     .timeRow{
       display:flex;
@@ -150,9 +160,10 @@
       max-height: 22vh;
       overflow: auto;
       user-select: text;
+      z-index: 9999;
     }
     .diag strong{ font-weight: 800; }
-    .diag .row{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
+    .diag .row{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:6px; align-items:center; }
     .diag button{
       font-size: 12px;
       padding: 6px 10px;
@@ -160,6 +171,36 @@
       border: 1px solid rgba(255,255,255,0.2);
       background: rgba(255,255,255,0.08);
       color:#fff;
+    }
+
+    /* ✅ 診断を「目立たないボタン」で隠す */
+    .diagHideBtn{
+      margin-left:auto;
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 10px;
+      opacity: 0.65;
+    }
+
+    /* ✅ 診断を隠した後に出す「小さい復帰ボタン」 */
+    .diagShowFloating{
+      position: fixed;
+      right: 10px;
+      bottom: 10px;
+      z-index: 10000;
+      font-size: 11px;
+      padding: 6px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+      opacity: 0.55;
+      display: none;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: rgba(0,0,0,0);
+    }
+    .diagShowFloating:active{
+      opacity: 0.8;
     }
   </style>
 </head>
@@ -180,9 +221,13 @@
       <strong>診断</strong>
       <button onclick="testSpeech()">音声テスト</button>
       <button onclick="refreshVoices()">音声一覧更新</button>
+      <button class="diagHideBtn" onclick="hideDiag()">隠す</button>
     </div>
     <div id="diagText">起動しました。</div>
   </div>
+
+  <!-- 診断が隠れている時だけ出る、目立たない復帰ボタン -->
+  <button class="diagShowFloating" id="diagShowBtn" onclick="showDiag()">診</button>
 
 <script>
   const yearEl = document.getElementById("yearline");
@@ -190,6 +235,9 @@
   const timeEl = document.getElementById("timeline");
   const speakBtn = document.getElementById("speakBtn");
   const diagText = document.getElementById("diagText");
+
+  const diag = document.getElementById("diag");
+  const diagShowBtn = document.getElementById("diagShowBtn");
 
   const wd = ["日","月","火","水","木","金","土"];
   const AUTO_HOURS = [7, 12, 18];
@@ -213,12 +261,22 @@
     diagText.innerHTML = `${stamp} ${msg}<br>` + diagText.innerHTML;
   }
 
+  /* ✅ 診断の表示/非表示 */
+  function hideDiag(){
+    diag.style.display = "none";
+    diagShowBtn.style.display = "block";
+  }
+  function showDiag(){
+    diag.style.display = "block";
+    diagShowBtn.style.display = "none";
+  }
+
   function updateLayoutVars(){
     const w = window.innerWidth;
     const h = window.innerHeight;
     const vmin = Math.min(w, h);
     const isLandscape = w > h;
-    const mult = isLandscape ? 1.2 : 1.0; // ← 横向きは全体1.2倍
+    const mult = isLandscape ? 1.2 : 1.0;
 
     const yearMin = Math.max(28, Math.floor(vmin * 0.085 * mult));
     const yearPref = (vmin * 0.11 * mult).toFixed(2) + "px";
@@ -253,8 +311,11 @@
     const dow = now.getDay();
 
     yearEl.textContent = `令和${y-2018}年 ${y}`;
+
+    // ✅ （ と ）を .unit(0.6em) にし、見た目の空白もなくす
     dateEl.innerHTML =
-      `<span class="${dayClass(dow)}">${m}<span class="unit">月</span>${d}<span class="unit">日</span><span class="dow">(${wd[dow]})</span></span>`;
+      `<span class="${dayClass(dow)}">${m}<span class="unit">月</span>${d}<span class="unit">日</span><span class="dow"><span class="unit">(</span>${wd[dow]}<span class="unit">)</span></span></span>`;
+
     timeEl.textContent = `${pad(now.getHours())}：${pad(now.getMinutes())}`;
 
     checkAutoSpeak(now);
@@ -336,7 +397,6 @@
     log(`音声一覧: total=${cachedVoices.length}, ja=${ja.length}${preferredVoice ? " / ja[0]="+preferredVoice.name : ""}`);
   }
 
-  // voices が遅れて入るiOS対策
   if("speechSynthesis" in window){
     speechSynthesis.onvoiceschanged = () => {
       refreshVoices();
@@ -349,12 +409,10 @@
     u.rate=0.9;
     u.pitch=1.2;
     u.volume=1;
-    // iOSでvoice未指定だと無音になることがあるので、取れたら指定
     if(preferredVoice) u.voice = preferredVoice;
     return u;
   }
 
-  // ✅ iOS最重要：発話開始できない/イベントが返らない時に必ず次へ進む
   function speakUtteranceSafe(u, fallbackMs = 6500){
     return new Promise(resolve=>{
       let finished = false;
@@ -369,20 +427,16 @@
       u.onend = () => finish("TTS end");
       u.onerror = () => finish("TTS error");
 
-      // 最終タイムアウト
       const timer = setTimeout(() => finish("TTS timeout（無音/無反応の可能性）"), fallbackMs);
 
-      // 発話開始をできるだけ確実に
       try { speechSynthesis.cancel(); } catch(e) {}
       try { speechSynthesis.resume(); } catch(e) {}
 
-      // iOSで「すぐ speak」すると失敗しやすいので少し待つ
       setTimeout(() => {
         try { speechSynthesis.resume(); } catch(e) {}
         try { speechSynthesis.speak(u); } catch(e) { finish("TTS speak throw"); }
       }, 180);
 
-      // finishしたらタイマー解除
       const origResolve = resolve;
       resolve = () => { clearTimeout(timer); origResolve(); };
     });
@@ -399,7 +453,6 @@
         return;
       }
 
-      // voices更新（遅延ロード対策）
       refreshVoices();
 
       const greet = timeGreeting(now.getHours());
@@ -446,10 +499,9 @@
     await ensureAudioContext();
 
     refreshVoices();
-    log("音声テスト：開始（『テストです』）");
+    log("音声テスト：開始（『ハロー』）");
     try{
-      // 効果音なしで単発テスト
-      await speakUtteranceSafe(makeUtterance("テストです。"), 4500);
+      await speakUtteranceSafe(makeUtterance("ハロー"), 4500);
     } finally {
       log("音声テスト：終了");
     }
