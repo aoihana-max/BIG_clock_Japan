@@ -1,285 +1,396 @@
 <!doctype html>
 <html lang="ja">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>今日の日時</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>今日の日時</title>
 
-<style>
-/*************************************************
- * 🎨 色・デザイン設定
- *************************************************/
-:root{
-  --bg:#000000;
+  <style>
+    :root{
+      /* 背景 */
+      --bg:#000000;
 
-  /* 年 */
-  --year:#FFFFFF;
+      /* 年 */
+      --year:#FFFFFF;
 
-  /* 日付（曜日別） */
-  --wk:#FFFF00;
-  --sat:#5FB3E6;
-  --sun:#FF4A4A;
+      /* 日付（曜日別） */
+      --wk:#FFFF00;
+      --sat:#5FB3E6;
+      --sun:#FF4A4A;
 
-  /* 時刻 */
-  --time:#00ff00;
+      /* 時刻 */
+      --time:#00ff00;
 
-  /* 🔊 音声ボタン */
-  --btn-bg:#ff8c00;
-  --btn-bg-press:#C96A2C;
-  --btn-ring:#C96A2C;
-  --btn-disabled:#5A3A28;
+      /* 🔊 音声ボタン */
+      --btn-bg:#ff8c00;
+      --btn-bg-press:#C96A2C;
+      --btn-ring:#C96A2C;
+      --btn-disabled:#5A3A28;
 
-  --btn-icon:#FFF1E6;
-  --btn-icon-disabled:#D9B9A2;
-}
+      --btn-icon:#FFF1E6;
+      --btn-icon-disabled:#D9B9A2;
 
-/*************************************************
- * 🧱 全体レイアウト
- *************************************************/
-html,body{
-  height:100%;
-  margin:0;
-  background:var(--bg);
-  font-family:-apple-system,"BIZ UDPGothic","Meiryo",sans-serif;
-  overflow:hidden;
-}
+      /* ✅ 強調（発光なし・拡大のみ） */
+      --dim-scale: 0.92;
+      --focus-scale: 1.18;
 
-.wrap{
-  height:100%;
-  display:flex;
-  flex-direction:column;
-  justify-content:center;
-  align-items:center;
-  text-align:center;
-  gap:5vh;
-  padding:24px;
-  box-sizing:border-box;
-}
+      /* ✅ 自動レイアウト用（JSで更新） */
+      --year-font: clamp(34px, 7.2vmin, 96px);
+      --main-font: clamp(52px, 12.5vmin, 160px);
+      --btn-size: clamp(76px, 10vmin, 138px);
+      --btn-icon-size: clamp(40px, 6vmin, 76px);
 
-/*************************************************
- * 🔠 文字表示
- *************************************************/
-.yearline{
-  color:var(--year);
-  font-weight:900;
-  font-size:clamp(64px,8vw,130px);
-  white-space:nowrap;
-}
+      /* (月) を少し離す */
+      --dow-gap: 0.18em;
+    }
 
-.dateline{
-  font-weight:950;
-  font-size:clamp(126.5px,14.95vw,230px); /* 1.15倍 */
-  white-space:nowrap;
-}
+    html,body{
+      height:100%;
+      margin:0;
+      background:var(--bg);
+      font-family:-apple-system,"BIZ UDPGothic","Meiryo",sans-serif;
+      overflow:hidden;
+    }
 
-.unit{
-  font-size:0.6em;
-  margin:0;
-}
+    .wrap{
+      height:100%;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      text-align:center;
+      padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+               max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+      gap: 3.6vmin;
+      box-sizing:border-box;
+    }
 
-.timeRow{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:3vw;
-  white-space:nowrap;
-}
+    .yearline{
+      color:var(--year);
+      font-weight:900;
+      font-size: var(--year-font);
+      white-space:nowrap;
+      max-width: 96vw;
+    }
 
-.timeline{
-  color:var(--time);
-  font-weight:950;
-  font-size:clamp(126.5px,14.95vw,230px);
-  white-space:nowrap;
-  transition:transform 0.3s ease, text-shadow 0.3s ease;
-}
+    .dateline{
+      font-weight:950;
+      font-size: var(--main-font);
+      white-space:nowrap;
+      max-width: 96vw;
+    }
 
-/* 曜日色 */
-.wk{color:var(--wk);}
-.sat{color:var(--sat);}
-.sun{color:var(--sun);}
+    /* 月・日（単位）だけ小さく */
+    .unit{ font-size:0.6em; margin:0; }
 
-/*************************************************
- * 🔊 読み上げ中の強調（拡大＋発光）
- *************************************************/
-.timeline.reading{
-  transform:scale(1.08);
-  text-shadow:
-    0 0 12px rgba(0,255,0,0.9),
-    0 0 24px rgba(0,255,0,0.6);
-}
+    /* (月)だけ少し離す */
+    .dow{ margin-left: var(--dow-gap); }
 
-/*************************************************
- * 🔊 音声ボタン
- *************************************************/
-.speakBtn{
-  width:clamp(126px,12.6vw,198px);
-  height:clamp(126px,12.6vw,198px);
-  border-radius:9999px;
+    .timeRow{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap: 3vmin;
+      max-width: 96vw;
+      white-space:nowrap;
+    }
 
-  border:6px solid var(--btn-ring);
-  background:var(--btn-bg);
-  color:var(--btn-icon);
+    /* 縦向きは縦並びにしてはみ出し回避 */
+    @media (orientation: portrait){
+      .timeRow{
+        flex-direction:column;
+        gap: 2.2vmin;
+      }
+    }
 
-  display:flex;
-  align-items:center;
-  justify-content:center;
+    .timeline{
+      color:var(--time);
+      font-weight:950;
+      font-size: var(--main-font);
+      white-space:nowrap;
+      max-width: 96vw;
+    }
 
-  font-size:clamp(63px,6.3vw,108px);
-  font-weight:900;
+    .wk{color:var(--wk);}
+    .sat{color:var(--sat);}
+    .sun{color:var(--sun);}
 
-  box-shadow:0 10px 18px rgba(0,0,0,0.45);
-  cursor:pointer;
-}
+    /* 🔊ボタン */
+    .speakBtn{
+      width: var(--btn-size);
+      height: var(--btn-size);
+      border-radius:9999px;
 
-.speakBtn:active{
-  background:var(--btn-bg-press);
-  transform:translateY(4px);
-}
+      border: 5px solid var(--btn-ring);
+      background: var(--btn-bg);
+      color: var(--btn-icon);
 
-.speakBtn[disabled]{
-  background:var(--btn-disabled);
-  color:var(--btn-icon-disabled);
-  border-color:#8C5A3C;
-  box-shadow:none;
-  cursor:default;
-}
-</style>
+      display:flex;
+      align-items:center;
+      justify-content:center;
+
+      font-size: var(--btn-icon-size);
+      font-weight:900;
+
+      box-shadow:0 10px 18px rgba(0,0,0,0.45);
+
+      /* iOS PWAでタップが拾われやすくする */
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: rgba(0,0,0,0);
+      cursor:pointer;
+    }
+
+    .speakBtn:active{
+      background: var(--btn-bg-press);
+      transform: translateY(3px);
+    }
+
+    .speakBtn[disabled]{
+      background: var(--btn-disabled);
+      color: var(--btn-icon-disabled);
+      border-color:#8C5A3C;
+      box-shadow:none;
+      cursor:default;
+    }
+
+    /* ✅ 強調（拡大のみ） */
+    .emph{
+      transition: transform 0.22s ease;
+      transform: scale(var(--dim-scale));
+    }
+    .emph.focus{
+      transform: scale(var(--focus-scale));
+    }
+  </style>
 </head>
 
 <body>
-<div class="wrap">
-  <div class="yearline" id="yearline">----</div>
-  <div class="dateline" id="dateline">----</div>
+  <div class="wrap">
+    <div class="yearline emph" id="yearline">----</div>
+    <div class="dateline emph" id="dateline">----</div>
 
-  <div class="timeRow">
-    <div class="timeline" id="timeline">--：--</div>
-    <button class="speakBtn" id="speakBtn" onclick="manualSpeak()">🔊</button>
+    <div class="timeRow">
+      <div class="timeline emph" id="timeline">--：--</div>
+      <button class="speakBtn" id="speakBtn" onclick="manualSpeak()" ontouchstart="manualSpeak()">🔊</button>
+    </div>
   </div>
-</div>
 
 <script>
-/*************************************************
- * ⏰ 日時ロジック
- *************************************************/
-const yearEl = document.getElementById("yearline");
-const dateEl = document.getElementById("dateline");
-const timeEl = document.getElementById("timeline");
-const speakBtn = document.getElementById("speakBtn");
+  const yearEl = document.getElementById("yearline");
+  const dateEl = document.getElementById("dateline");
+  const timeEl = document.getElementById("timeline");
+  const speakBtn = document.getElementById("speakBtn");
 
-const wd = ["日","月","火","水","木","金","土"];
-const AUTO_HOURS = [8,12,18];
+  const wd = ["日","月","火","水","木","金","土"];
 
-let speaking = false;
-let lastAutoKey = "";
+  /* ✅ 自動読み上げ：7 / 12 / 18 */
+  const AUTO_HOURS = [7, 12, 18];
 
-const pad = n => String(n).padStart(2,"0");
+  let speaking = false;
+  let lastAutoKey = "";
 
-function dayClass(d){
-  if(d===0) return "sun";
-  if(d===6) return "sat";
-  return "wk";
-}
+  /* iOS安定化：初回の手動タップ後に自動を許可 */
+  let userActivatedAudio = false;
+  let audioCtx = null;
 
-function render(){
-  const now = new Date();
+  const pad = n => String(n).padStart(2,"0");
+  function dayClass(d){ return d===0 ? "sun" : d===6 ? "sat" : "wk"; }
 
-  yearEl.textContent = `令和${now.getFullYear()-2018}年 ${now.getFullYear()}`;
+  /* ✅ 端末・向きに合わせてフォントを自動調整（回転しなくても収める） */
+  function updateLayoutVars(){
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const vmin = Math.min(w, h); // iPhone縦でも横でも短辺基準
+    // ざっくり係数（必要ならここだけ微調整）
+    const yearMin = Math.max(28, Math.floor(vmin * 0.085));
+    const yearPref = (vmin * 0.11).toFixed(2) + "px";
+    const yearMax = Math.max(72, Math.floor(vmin * 0.20));
 
-  /* ★ 空白が出ない1行表記 */
-  dateEl.innerHTML =
-    `<span class="${dayClass(now.getDay())}">${now.getMonth()+1}<span class="unit">月</span>${now.getDate()}<span class="unit">日</span>(${wd[now.getDay()]})</span>`;
+    const mainMin = Math.max(40, Math.floor(vmin * 0.13));
+    const mainPref = (vmin * 0.19).toFixed(2) + "px";
+    const mainMax = Math.max(110, Math.floor(vmin * 0.34));
 
-  timeEl.textContent = `${pad(now.getHours())}：${pad(now.getMinutes())}`;
+    const btn = Math.max(64, Math.floor(vmin * 0.14));
+    const btnMax = Math.max(110, Math.floor(vmin * 0.22));
+    const icon = Math.max(34, Math.floor(vmin * 0.085));
+    const iconMax = Math.max(64, Math.floor(vmin * 0.13));
 
-  checkAutoSpeak(now);
-}
+    const root = document.documentElement.style;
+    root.setProperty("--year-font", `clamp(${yearMin}px, ${yearPref}, ${yearMax}px)`);
+    root.setProperty("--main-font", `clamp(${mainMin}px, ${mainPref}, ${mainMax}px)`);
+    root.setProperty("--btn-size", `clamp(${btn}px, ${Math.round(vmin*0.16)}px, ${btnMax}px)`);
+    root.setProperty("--btn-icon-size", `clamp(${icon}px, ${Math.round(vmin*0.095)}px, ${iconMax}px)`);
+  }
+  window.addEventListener("resize", updateLayoutVars);
+  window.addEventListener("orientationchange", updateLayoutVars);
 
-/*************************************************
- * 🔔 チャラン音
- *************************************************/
-function playChime(){
-  const ctx = new (window.AudioContext||window.webkitAudioContext)();
-  const t = ctx.currentTime;
-  const g = ctx.createGain();
-  g.connect(ctx.destination);
+  /* ===== 表示更新（空白が出ない1行版 + (月)だけ少し離す） ===== */
+  function render(){
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth()+1;
+    const d = now.getDate();
+    const dow = now.getDay();
 
-  g.gain.setValueAtTime(0.0001,t);
-  g.gain.exponentialRampToValueAtTime(0.35,t+0.02);
-  g.gain.exponentialRampToValueAtTime(0.0001,t+0.45);
+    yearEl.textContent = `令和${y-2018}年 ${y}`;
 
-  const o = ctx.createOscillator();
-  o.type="triangle";
-  o.frequency.setValueAtTime(1200,t);
-  o.frequency.exponentialRampToValueAtTime(600,t+0.4);
-  o.connect(g);
-  o.start();
-  o.stop(t+0.45);
-}
+    dateEl.innerHTML =
+      `<span class="${dayClass(dow)}">${m}<span class="unit">月</span>${d}<span class="unit">日</span><span class="dow">(${wd[dow]})</span></span>`;
 
-/*************************************************
- * 🗣 音声読み上げ
- *************************************************/
-function timeGreeting(h){
-  if(h===8) return "朝です。";
-  if(h===12) return "お昼です。";
-  if(h===18) return "夕方です。";
-  return "";
-}
+    timeEl.textContent = `${pad(now.getHours())}：${pad(now.getMinutes())}`;
 
-function buildText(now){
-  return `今日は${now.getMonth()+1}月${now.getDate()}日${wd[now.getDay()]}曜日です。`
-       + `時刻は${now.getHours()}時${now.getMinutes()}分です。`
-       + `令和${now.getFullYear()-2018}年、${now.getFullYear()}年です。`;
-}
+    checkAutoSpeak(now);
+  }
 
-function speak(text){
-  if(speaking) return;
-  speaking = true;
-  speakBtn.disabled = true;
+  /* ===== AudioContext（手動タップで起動） ===== */
+  function ensureAudioContext(){
+    if(!audioCtx){
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if(audioCtx.state === "suspended"){
+      return audioCtx.resume().catch(()=>{});
+    }
+    return Promise.resolve();
+  }
 
-  /* 🔴 読み上げ開始：時刻を強調 */
-  timeEl.classList.add("reading");
+  /* ===== 効果音（各パート直前に鳴らす） ===== */
+  function playChime(){
+    if(!audioCtx) return Promise.resolve();
 
-  playChime();
+    const t = audioCtx.currentTime;
+    const g = audioCtx.createGain();
+    g.connect(audioCtx.destination);
 
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang="ja-JP";
-  u.rate=0.9;
-  u.pitch=1.2;
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.30,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.45);
 
-  u.onend=()=>{
-    speaking=false;
-    speakBtn.disabled=false;
-    timeEl.classList.remove("reading");
-  };
+    const o = audioCtx.createOscillator();
+    o.type="triangle";
+    o.frequency.setValueAtTime(1200,t);
+    o.frequency.exponentialRampToValueAtTime(600,t+0.4);
+    o.connect(g);
 
-  speechSynthesis.cancel();
-  setTimeout(()=>speechSynthesis.speak(u),450);
-}
+    o.start(t);
+    o.stop(t+0.45);
 
-function manualSpeak(){
-  const now = new Date();
-  speak(timeGreeting(now.getHours()) + buildText(now));
-}
+    return new Promise(res => setTimeout(res, 470));
+  }
 
-function checkAutoSpeak(now){
-  if(now.getMinutes()!==0) return;
-  if(!AUTO_HOURS.includes(now.getHours())) return;
+  /* ===== 強調（読み上げ文と完全同期：3分割で確実） ===== */
+  function clearFocus(){
+    yearEl.classList.remove("focus");
+    dateEl.classList.remove("focus");
+    timeEl.classList.remove("focus");
+  }
+  function focusDate(){ clearFocus(); dateEl.classList.add("focus"); }
+  function focusTime(){ clearFocus(); timeEl.classList.add("focus"); }
+  function focusYear(){ clearFocus(); yearEl.classList.add("focus"); }
 
-  const key = `${now.toDateString()}-${now.getHours()}`;
-  if(key===lastAutoKey) return;
+  /* ===== 読み上げ文（3分割） ===== */
+  function timeGreeting(h){
+    if(h===7)  return "朝です。";
+    if(h===12) return "お昼です。";
+    if(h===18) return "夕方です。";
+    return "";
+  }
 
-  lastAutoKey = key;
-  speak(timeGreeting(now.getHours()) + buildText(now));
-}
+  function buildParts(now){
+    const y = now.getFullYear();
+    const m = now.getMonth()+1;
+    const d = now.getDate();
+    const dow = wd[now.getDay()];
+    const h = now.getHours();
+    const min = now.getMinutes();
+    return {
+      part1: `今日は${m}月${d}日${dow}曜日です。`,
+      part2: `時刻は${h}時${min}分です。`,
+      part3: `令和${y-2018}年、${y}年です。`
+    };
+  }
 
-/* 初期化 & 分更新 */
-render();
-(function tick(){
-  const n = new Date();
-  setTimeout(()=>{render();tick();},
-    (60-n.getSeconds())*1000 - n.getMilliseconds()+30);
-})();
+  function makeUtterance(text){
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang="ja-JP";
+    u.rate=0.9;
+    u.pitch=1.2;
+    return u;
+  }
+
+  function speakUtterance(u){
+    return new Promise(resolve=>{
+      u.onend = resolve;
+      u.onerror = resolve;
+      speechSynthesis.speak(u);
+    });
+  }
+
+  /* ✅ 完全同期：強調 → 効果音 → 読み上げ をパートごとに await */
+  async function speakSequence(now){
+    if(speaking) return;
+    speaking = true;
+    speakBtn.disabled = true;
+
+    speechSynthesis.cancel();
+
+    const greet = timeGreeting(now.getHours());
+    const { part1, part2, part3 } = buildParts(now);
+
+    // ① 日付
+    focusDate();
+    await playChime();
+    await speakUtterance(makeUtterance(greet + part1));
+
+    // ② 時刻
+    focusTime();
+    await playChime();
+    await speakUtterance(makeUtterance(part2));
+
+    // ③ 年
+    focusYear();
+    await playChime();
+    await speakUtterance(makeUtterance(part3));
+
+    clearFocus();
+    speaking = false;
+    speakBtn.disabled = false;
+  }
+
+  /* 手動（初回タップで音の許可を通す） */
+  async function manualSpeak(){
+    if(speaking) return;
+    userActivatedAudio = true;
+    await ensureAudioContext();
+    await speakSequence(new Date());
+  }
+
+  /* 自動（7/12/18）※iOS対策：初回手動タップ後のみ */
+  function checkAutoSpeak(now){
+    if(now.getMinutes() !== 0) return;
+    if(!AUTO_HOURS.includes(now.getHours())) return;
+
+    const key = `${now.toDateString()}-${now.getHours()}`;
+    if(key === lastAutoKey) return;
+    lastAutoKey = key;
+
+    if(!userActivatedAudio) return;
+    if(document.visibilityState !== "visible") return; // 画面表示中のみ
+
+    speakSequence(now);
+  }
+
+  /* 初期化 */
+  updateLayoutVars();
+  render();
+
+  /* 分が変わる瞬間に更新 */
+  (function tick(){
+    const n = new Date();
+    setTimeout(()=>{ render(); tick(); },
+      (60-n.getSeconds())*1000 - n.getMilliseconds()+30);
+  })();
 </script>
 </body>
 </html>
