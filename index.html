@@ -54,7 +54,6 @@
       box-sizing:border-box;
     }
 
-    /* ✅ 文字サイズの指定（JSで自動調整） */
     :root{
       --year-font: clamp(34px, 7.2vmin, 96px);
       --main-font: clamp(52px, 12.5vmin, 160px);
@@ -83,8 +82,9 @@
       margin:0;
     }
 
+    /* 日付と曜日の間は見た目の空白なし */
     .dow{
-      margin-left: var(--dow-gap); /* 0em にして見た目の空白を消す */
+      margin-left: var(--dow-gap);
     }
 
     .timeRow{
@@ -141,10 +141,26 @@
       cursor:default;
     }
 
-    .emph{ transition: transform 0.22s ease; transform: scale(var(--dim-scale)); }
-    .emph.focus{ transform: scale(var(--focus-scale)); }
+    /* ✅ 強調（拡大のみ） */
+    .emph{
+      transition: transform 0.22s ease;
+      transform: scale(var(--dim-scale));
+    }
+    .emph.focus{
+      transform: scale(var(--focus-scale));
+    }
 
-    /* 診断表示（小さく） */
+    /* ✅ 日付内の部分強調（“全部拡大”を避けるため分割） */
+    .datePart{
+      display:inline-block; /* transformが効く */
+      transition: transform 0.22s ease;
+      transform: scale(1);  /* 通常 */
+    }
+    .datePart.focusPart{
+      transform: scale(var(--focus-scale));
+    }
+
+    /* 診断表示 */
     .diag{
       position: fixed;
       left: 10px;
@@ -173,7 +189,7 @@
       color:#fff;
     }
 
-    /* ✅ 診断を「目立たないボタン」で隠す */
+    /* 診断を目立たないボタンで隠す */
     .diagHideBtn{
       margin-left:auto;
       font-size: 11px;
@@ -182,7 +198,7 @@
       opacity: 0.65;
     }
 
-    /* ✅ 診断を隠した後に出す「小さい復帰ボタン」 */
+    /* 診断復帰ボタン */
     .diagShowFloating{
       position: fixed;
       right: 10px;
@@ -199,9 +215,7 @@
       touch-action: manipulation;
       -webkit-tap-highlight-color: rgba(0,0,0,0);
     }
-    .diagShowFloating:active{
-      opacity: 0.8;
-    }
+    .diagShowFloating:active{ opacity: 0.8; }
   </style>
 </head>
 
@@ -226,7 +240,6 @@
     <div id="diagText">起動しました。</div>
   </div>
 
-  <!-- 診断が隠れている時だけ出る、目立たない復帰ボタン -->
   <button class="diagShowFloating" id="diagShowBtn" onclick="showDiag()">診</button>
 
 <script>
@@ -248,7 +261,6 @@
   let userActivatedAudio = false;
   let audioCtx = null;
 
-  // Speech voices
   let cachedVoices = [];
   let preferredVoice = null;
 
@@ -261,7 +273,6 @@
     diagText.innerHTML = `${stamp} ${msg}<br>` + diagText.innerHTML;
   }
 
-  /* ✅ 診断の表示/非表示 */
   function hideDiag(){
     diag.style.display = "none";
     diagShowBtn.style.display = "block";
@@ -297,12 +308,13 @@
     const root = document.documentElement.style;
     root.setProperty("--year-font", `clamp(${yearMin}px, ${yearPref}, ${yearMax}px)`);
     root.setProperty("--main-font", `clamp(${mainMin}px, ${mainPref}, ${mainMax}px)`);
-    root.setProperty("--btn-size", `clamp(${btnMin}px, ${btnPref}px, ${btnMax}px)`);
-    root.setProperty("--btn-icon-size", `clamp(${iconMin}px, ${iconPref}px, ${iconMax}px)`);
+    root.setProperty("--btn-size", `clamp(${btnMin}px, ${btnPref}, ${btnMax}px)`);
+    root.setProperty("--btn-icon-size", `clamp(${iconMin}px, ${iconPref}, ${iconMax}px)`);
   }
   window.addEventListener("resize", updateLayoutVars);
   window.addEventListener("orientationchange", updateLayoutVars);
 
+  /* ✅ 日付を「月日パート」と「曜日パート」に分割して描画 */
   function render(){
     const now = new Date();
     const y = now.getFullYear();
@@ -312,9 +324,12 @@
 
     yearEl.textContent = `令和${y-2018}年 ${y}`;
 
-    // ✅ （ と ）を .unit(0.6em) にし、見た目の空白もなくす
+    // 例）10月12日(祝･月) など文字数が増えても
+    // “全体拡大”を避けて見切れを減らすため、月日/曜日を分割
     dateEl.innerHTML =
-      `<span class="${dayClass(dow)}">${m}<span class="unit">月</span>${d}<span class="unit">日</span><span class="dow"><span class="unit">(</span>${wd[dow]}<span class="unit">)</span></span></span>`;
+      `<span class="${dayClass(dow)}">
+         <span class="datePart" id="dateMD">${m}<span class="unit">月</span>${d}<span class="unit">日</span></span><span class="dow datePart" id="dateDOW"><span class="unit">(</span>${wd[dow]}<span class="unit">)</span></span>
+       </span>`;
 
     timeEl.textContent = `${pad(now.getHours())}：${pad(now.getMinutes())}`;
 
@@ -356,14 +371,39 @@
     return new Promise(res => setTimeout(res, 470));
   }
 
-  function clearFocus(){
+  /* ✅ 強調解除（全パート） */
+  function clearFocusAll(){
     yearEl.classList.remove("focus");
     dateEl.classList.remove("focus");
     timeEl.classList.remove("focus");
+
+    const md = document.getElementById("dateMD");
+    const dw = document.getElementById("dateDOW");
+    if(md) md.classList.remove("focusPart");
+    if(dw) dw.classList.remove("focusPart");
   }
-  function focusDate(){ clearFocus(); dateEl.classList.add("focus"); }
-  function focusTime(){ clearFocus(); timeEl.classList.add("focus"); }
-  function focusYear(){ clearFocus(); yearEl.classList.add("focus"); }
+
+  function focusMonthDay(){
+    clearFocusAll();
+    const md = document.getElementById("dateMD");
+    if(md) md.classList.add("focusPart");
+  }
+
+  function focusWeekday(){
+    clearFocusAll();
+    const dw = document.getElementById("dateDOW");
+    if(dw) dw.classList.add("focusPart");
+  }
+
+  function focusTime(){
+    clearFocusAll();
+    timeEl.classList.add("focus");
+  }
+
+  function focusYear(){
+    clearFocusAll();
+    yearEl.classList.add("focus");
+  }
 
   function timeGreeting(h){
     if(h===7)  return "朝です。";
@@ -372,6 +412,7 @@
     return "";
   }
 
+  /* ✅ 読み上げも “月日→曜日→時刻→年” の順に分割 */
   function buildParts(now){
     const y = now.getFullYear();
     const m = now.getMonth()+1;
@@ -379,10 +420,13 @@
     const dow = wd[now.getDay()];
     const h = now.getHours();
     const min = now.getMinutes();
+
     return {
-      part1: `今日は${m}月${d}日${dow}曜日です。`,
-      part2: `時刻は${h}時${min}分です。`,
-      part3: `令和${y-2018}年、${y}年です。`
+      greet: timeGreeting(h),
+      partMD: `今日は${m}月${d}日です。`,
+      partDOW: `${dow}曜日です。`,
+      partTIME: `時刻は${h}時${min}分です。`,
+      partYEAR: `令和${y-2018}年、${y}年です。`
     };
   }
 
@@ -454,16 +498,16 @@
       }
 
       refreshVoices();
+      const p = buildParts(now);
 
-      const greet = timeGreeting(now.getHours());
-      const { part1, part2, part3 } = buildParts(now);
-
-      focusDate(); await playChime(); await speakUtteranceSafe(makeUtterance(greet + part1), 7500);
-      focusTime(); await playChime(); await speakUtteranceSafe(makeUtterance(part2), 6500);
-      focusYear(); await playChime(); await speakUtteranceSafe(makeUtterance(part3), 6500);
+      // ✅ 月日 → 曜日 → 時刻 → 年 の強調と読み上げ
+      focusMonthDay(); await playChime(); await speakUtteranceSafe(makeUtterance(p.greet + p.partMD), 4500);
+      focusWeekday();  await playChime(); await speakUtteranceSafe(makeUtterance(p.partDOW), 3500);
+      focusTime();     await playChime(); await speakUtteranceSafe(makeUtterance(p.partTIME), 5500);
+      focusYear();     await playChime(); await speakUtteranceSafe(makeUtterance(p.partYEAR), 4500);
 
     } finally {
-      clearFocus();
+      clearFocusAll();
       speaking = false;
       speakBtn.disabled = false;
     }
@@ -474,7 +518,6 @@
     userActivatedAudio = true;
 
     await ensureAudioContext();
-
     refreshVoices();
     log("手動読み上げ開始");
     await speakSequence(new Date());
